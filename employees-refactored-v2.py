@@ -1,17 +1,10 @@
-"""
-Employee Management System - Refactored with Design Patterns and SOLID Principles
-"""
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Protocol, Optional
 from enum import Enum
 import os
 
-
-# =============================================================================
 # ENUMS AND CONSTANTS
-# =============================================================================
 
 class EmployeeRole(Enum):
     INTERN = "intern"
@@ -27,9 +20,7 @@ class EmployeeType(Enum):
 FIXED_VACATION_DAYS_PAYOUT = 5
 
 
-# =============================================================================
 # INTERFACES AND PROTOCOLS (Dependency Inversion Principle)
-# =============================================================================
 
 class PayrollCalculator(Protocol):
     """Interface for payroll calculation strategies."""
@@ -83,9 +74,7 @@ class UIRenderer(Protocol):
         ...
 
 
-# =============================================================================
 # DOMAIN MODELS (Single Responsibility Principle)
-# =============================================================================
 
 @dataclass
 class Employee:
@@ -117,9 +106,7 @@ class HourlyEmployee(Employee):
     hours_worked: int = 10
 
 
-# =============================================================================
 # STRATEGY PATTERN IMPLEMENTATIONS
-# =============================================================================
 
 class SalariedPayrollCalculator:
     """Strategy for calculating salaried employee pay."""
@@ -174,9 +161,7 @@ class ConsoleUIRenderer:
         print(message)
 
 
-# =============================================================================
 # REPOSITORY PATTERN (Single Responsibility)
-# =============================================================================
 
 class InMemoryEmployeeRepository:
     """In-memory implementation of employee repository."""
@@ -194,9 +179,7 @@ class InMemoryEmployeeRepository:
         return [emp for emp in self._employees if emp.role == role]
 
 
-# =============================================================================
 # ABSTRACT FACTORY PATTERN
-# =============================================================================
 
 class AbstractEmployeeFactory(ABC):
     """Abstract factory for creating employees."""
@@ -251,9 +234,7 @@ class EmployeeFactoryProvider:
         return factory
 
 
-# =============================================================================
 # COMMAND PATTERN
-# =============================================================================
 
 class Command(ABC):
     """Abstract command interface."""
@@ -331,9 +312,7 @@ class PayEmployeesCommand(Command):
         self._payroll_service.pay_all_employees()
 
 
-# =============================================================================
 # SERVICES (Single Responsibility, Open/Closed)
-# =============================================================================
 
 class PayrollService:
     """Service for handling payroll operations."""
@@ -382,9 +361,7 @@ class EmployeeService:
         self._vacation_manager.take_vacation(employee, payout)
 
 
-# =============================================================================
 # MAIN APPLICATION (Dependency Injection)
-# =============================================================================
 
 class EmployeeManagementApp:
     """Main application class with dependency injection."""
@@ -527,9 +504,7 @@ class EmployeeManagementApp:
         command.execute()
 
 
-# =============================================================================
 # DEPENDENCY INJECTION CONTAINER
-# =============================================================================
 
 def create_app() -> EmployeeManagementApp:
     """Create the application with all dependencies injected."""
@@ -540,9 +515,7 @@ def create_app() -> EmployeeManagementApp:
     return EmployeeManagementApp(repository, ui, vacation_manager)
 
 
-# =============================================================================
 # MAIN ENTRY POINT
-# =============================================================================
 
 def main():
     """Main entry point of the application."""
