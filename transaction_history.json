@@ -1,0 +1,51 @@
+[
+  {
+    "timestamp": "2025-07-25T23:18:05.282856",
+    "employee_name": "rene",
+    "employee_role": "intern",
+    "transaction_type": "payment",
+    "amount": 5.0,
+    "base_pay": 5.0,
+    "bonuses": 0.0,
+    "overtime": 0.0,
+    "special_hours": 0.0,
+    "performance_bonus": 0.0,
+    "description": "Payment: $5.00"
+  },
+  {
+    "timestamp": "2025-07-25T23:18:05.282856",
+    "employee_name": "diego",
+    "employee_role": "manager",
+    "transaction_type": "payment",
+    "amount": 2640.0,
+    "base_pay": 2200.0,
+    "bonuses": 440.0,
+    "overtime": 0.0,
+    "special_hours": 0.0,
+    "performance_bonus": 220.0,
+    "description": "Payment: $2640.00"
+  },
+  {
+    "timestamp": "2025-07-25T23:18:05.284258",
+    "employee_name": "julio",
+    "employee_role": "intern",
+    "transaction_type": "payment",
+    "amount": 4.025,
+    "base_pay": 3.5,
+    "bonuses": 0.525,
+    "overtime": 0.0,
+    "special_hours": 0.0,
+    "performance_bonus": 0.0,
+    "description": "Payment: $4.03"
+  },
+  {
+    "timestamp": "2025-07-25T23:19:59.009638",
+    "employee_name": "christian",
+    "employee_role": "vice_president",
+    "transaction_type": "vacation",
+    "days_taken": 25,
+    "payout": false,
+    "remaining_days": 0,
+    "description": "Vacation for vice_president"
+  }
+]

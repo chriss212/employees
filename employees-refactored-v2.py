@@ -336,27 +336,27 @@ class VacationPolicyManager:
         self._policies = {
             EmployeeRole.INTERN: VacationPolicy(
                 role=EmployeeRole.INTERN,
-                base_vacation_days=15,
-                max_vacation_days=20,
+                base_vacation_days=0,  # Interns cannot take vacations
+                max_vacation_days=0,   # Interns cannot take vacations
                 payout_allowed=False,
                 payout_days_limit=0,
-                carry_over_limit=5
+                carry_over_limit=0
             ),
             EmployeeRole.MANAGER: VacationPolicy(
                 role=EmployeeRole.MANAGER,
                 base_vacation_days=25,
                 max_vacation_days=35,
                 payout_allowed=True,
-                payout_days_limit=10,
+                payout_days_limit=10,  # Managers can get up to 10 days payout
                 carry_over_limit=15,
                 seniority_bonus_days=2
             ),
             EmployeeRole.VICE_PRESIDENT: VacationPolicy(
                 role=EmployeeRole.VICE_PRESIDENT,
                 base_vacation_days=30,
-                max_vacation_days=45,
+                max_vacation_days=5,   # Vice presidents limited to 5 days per request
                 payout_allowed=True,
-                payout_days_limit=15,
+                payout_days_limit=5,   # Vice presidents limited to 5 days payout
                 carry_over_limit=20,
                 seniority_bonus_days=3
             )
@@ -530,6 +530,10 @@ class EnhancedVacationManager:
         if isinstance(employee, FreelancerEmployee):
             print("Freelancers do not have vacation benefits.")
             return
+        
+        # Special handling for interns
+        if employee.role == EmployeeRole.INTERN:
+            raise ValueError("Interns cannot request vacations or receive vacation payouts.")
         
         policy = self.vacation_policy_manager.get_policy(employee.role)
         
@@ -1254,6 +1258,8 @@ class EmployeeManagementApp:
         for i, emp in enumerate(employees):
             if isinstance(emp, FreelancerEmployee):
                 self.ui.display_message(f"{i}. {emp.name} - Freelancer (No vacation benefits)")
+            elif emp.role == EmployeeRole.INTERN:
+                self.ui.display_message(f"{i}. {emp.name} ({emp.role.value}) - Cannot take vacations or receive payouts")
             else:
                 policy = self.vacation_manager.vacation_policy_manager.get_policy(emp.role)
                 self.ui.display_message(f"{i}. {emp.name} ({emp.role.value}) - {emp.vacation_days} days left")
@@ -1268,6 +1274,11 @@ class EmployeeManagementApp:
             
             if isinstance(emp, FreelancerEmployee):
                 self.ui.display_message("Freelancers do not have vacation benefits.")
+                return
+            
+            # Check if employee is an intern
+            if emp.role == EmployeeRole.INTERN:
+                self.ui.display_message("Interns cannot request vacations or receive vacation payouts.")
                 return
             
             # Get vacation type and days
