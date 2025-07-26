@@ -4,8 +4,8 @@ from typing import List, Dict, Protocol, Type, TypeVar, Optional
 from enum import Enum
 import os
 import json
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 # CONFIGURATION
 
