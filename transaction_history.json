@@ -47,5 +47,45 @@
     "payout": false,
     "remaining_days": 0,
     "description": "Vacation for vice_president"
+  },
+  {
+    "timestamp": "2025-07-25T23:35:38.093972",
+    "employee_name": "melissa",
+    "employee_role": "manager",
+    "transaction_type": "vacation",
+    "days_taken": 10,
+    "payout": false,
+    "remaining_days": 15,
+    "description": "Vacation for manager"
+  },
+  {
+    "timestamp": "2025-07-25T23:37:20.330635",
+    "employee_name": "melissa",
+    "employee_role": "manager",
+    "transaction_type": "vacation",
+    "days_taken": 8,
+    "payout": true,
+    "remaining_days": 7,
+    "description": "Payout for manager"
+  },
+  {
+    "timestamp": "2025-07-25T23:38:39.830118",
+    "employee_name": "alex",
+    "employee_role": "manager",
+    "transaction_type": "vacation",
+    "days_taken": 5,
+    "payout": true,
+    "remaining_days": 20,
+    "description": "Payout for manager"
+  },
+  {
+    "timestamp": "2025-07-25T23:39:05.618815",
+    "employee_name": "alex",
+    "employee_role": "manager",
+    "transaction_type": "vacation",
+    "days_taken": 6,
+    "payout": true,
+    "remaining_days": 14,
+    "description": "Payout for manager"
   }
 ]
