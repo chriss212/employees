@@ -1,10 +1,11 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Dict, Protocol, Type, TypeVar, Optional
+from typing import List, Dict, Protocol, Type, TypeVar, Optional, Union
 from enum import Enum
 import os
 import json
 from pathlib import Path
+from datetime import datetime
 
 # CONFIGURATION
 
@@ -315,15 +316,249 @@ class FreelancerPayrollCalculator:
         total_pay = base_pay + performance_bonus + regular_bonus
         return total_pay
 
-class StandardVacationManager:
+# VACATION POLICIES BY ROLE
+
+@dataclass
+class VacationPolicy:
+    """Specific vacation policies for different employee roles."""
+    role: EmployeeRole
+    base_vacation_days: int
+    max_vacation_days: int
+    payout_allowed: bool
+    payout_days_limit: int
+    carry_over_limit: int
+    seniority_bonus_days: int = 0  # Additional days per year of service
+
+class VacationPolicyManager:
+    """Manages role-specific vacation policies."""
+    
+    def __init__(self):
+        self._policies = {
+            EmployeeRole.INTERN: VacationPolicy(
+                role=EmployeeRole.INTERN,
+                base_vacation_days=15,
+                max_vacation_days=20,
+                payout_allowed=False,
+                payout_days_limit=0,
+                carry_over_limit=5
+            ),
+            EmployeeRole.MANAGER: VacationPolicy(
+                role=EmployeeRole.MANAGER,
+                base_vacation_days=25,
+                max_vacation_days=35,
+                payout_allowed=True,
+                payout_days_limit=10,
+                carry_over_limit=15,
+                seniority_bonus_days=2
+            ),
+            EmployeeRole.VICE_PRESIDENT: VacationPolicy(
+                role=EmployeeRole.VICE_PRESIDENT,
+                base_vacation_days=30,
+                max_vacation_days=45,
+                payout_allowed=True,
+                payout_days_limit=15,
+                carry_over_limit=20,
+                seniority_bonus_days=3
+            )
+        }
+    
+    def get_policy(self, role: EmployeeRole) -> VacationPolicy:
+        """Get vacation policy for a specific role."""
+        return self._policies.get(role, self._policies[EmployeeRole.INTERN])
+    
+    def can_take_vacation(self, employee: Employee, days: int) -> bool:
+        """Check if employee can take vacation days."""
+        policy = self.get_policy(employee.role)
+        return employee.vacation_days >= days and days <= policy.max_vacation_days
+    
+    def can_payout_vacation(self, employee: Employee, days: int) -> bool:
+        """Check if employee can get vacation payout."""
+        policy = self.get_policy(employee.role)
+        return (policy.payout_allowed and 
+                employee.vacation_days >= days and 
+                days <= policy.payout_days_limit)
+
+# TRANSACTION HISTORY
+
+@dataclass
+class Transaction:
+    """Base transaction record."""
+    timestamp: datetime
+    employee_name: str
+    employee_role: EmployeeRole
+    transaction_type: str
+    amount: float = 0.0
+    description: str = ""
+
+@dataclass
+class VacationTransaction(Transaction):
+    """Vacation-related transaction."""
+    days_taken: int = 0
+    payout: bool = False
+    remaining_days: int = 0
+
+@dataclass
+class PaymentTransaction(Transaction):
+    """Payment-related transaction."""
+    base_pay: float = 0.0
+    bonuses: float = 0.0
+    overtime: float = 0.0
+    special_hours: float = 0.0
+    performance_bonus: float = 0.0
+
+class TransactionLogger:
+    """Logs all transactions (vacations and payments)."""
+    
+    def __init__(self, log_file: str = "transaction_history.json"):
+        self.log_file = log_file
+        self._transactions: List[Dict] = []
+        self._load_transactions()
+    
+    def _load_transactions(self) -> None:
+        """Load existing transactions from file."""
+        try:
+            if Path(self.log_file).exists():
+                with open(self.log_file, 'r', encoding='utf-8') as f:
+                    self._transactions = json.load(f)
+        except Exception as e:
+            print(f"Error loading transaction history: {e}")
+            self._transactions = []
+    
+    def _save_transactions(self) -> None:
+        """Save transactions to file."""
+        try:
+            with open(self.log_file, 'w', encoding='utf-8') as f:
+                json.dump(self._transactions, f, indent=2, ensure_ascii=False, default=str)
+        except Exception as e:
+            print(f"Error saving transaction history: {e}")
+    
+    def log_vacation(self, employee: Employee, days: int, payout: bool, 
+                    remaining_days: int, description: str = "") -> None:
+        """Log a vacation transaction."""
+        transaction = {
+            "timestamp": datetime.now().isoformat(),
+            "employee_name": employee.name,
+            "employee_role": employee.role.value,
+            "transaction_type": "vacation",
+            "days_taken": days,
+            "payout": payout,
+            "remaining_days": remaining_days,
+            "description": description or f"{'Payout' if payout else 'Vacation'} of {days} days"
+        }
+        self._transactions.append(transaction)
+        self._save_transactions()
+    
+    def log_payment(self, employee: Employee, total_amount: float, 
+                   base_pay: float, bonuses: float, overtime: float = 0.0,
+                   special_hours: float = 0.0, performance_bonus: float = 0.0) -> None:
+        """Log a payment transaction."""
+        transaction = {
+            "timestamp": datetime.now().isoformat(),
+            "employee_name": employee.name,
+            "employee_role": employee.role.value,
+            "transaction_type": "payment",
+            "amount": total_amount,
+            "base_pay": base_pay,
+            "bonuses": bonuses,
+            "overtime": overtime,
+            "special_hours": special_hours,
+            "performance_bonus": performance_bonus,
+            "description": f"Payment: ${total_amount:.2f}"
+        }
+        self._transactions.append(transaction)
+        self._save_transactions()
+    
+    def get_employee_history(self, employee_name: str) -> List[Dict]:
+        """Get transaction history for a specific employee."""
+        return [t for t in self._transactions if t["employee_name"] == employee_name]
+    
+    def get_recent_transactions(self, limit: int = 10) -> List[Dict]:
+        """Get recent transactions."""
+        return sorted(self._transactions, key=lambda x: x["timestamp"], reverse=True)[:limit]
+    
+    def get_transactions_by_type(self, transaction_type: str) -> List[Dict]:
+        """Get transactions by type (vacation or payment)."""
+        return [t for t in self._transactions if t["transaction_type"] == transaction_type]
+    
+    def export_transaction_report(self, filename: str = None) -> None:
+        """Export transaction history to a readable format."""
+        if not filename:
+            filename = f"transaction_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write("TRANSACTION HISTORY REPORT\n")
+                f.write("=" * 50 + "\n\n")
+                
+                for transaction in sorted(self._transactions, key=lambda x: x["timestamp"]):
+                    f.write(f"Date: {transaction['timestamp']}\n")
+                    f.write(f"Employee: {transaction['employee_name']} ({transaction['employee_role']})\n")
+                    f.write(f"Type: {transaction['transaction_type'].upper()}\n")
+                    
+                    if transaction['transaction_type'] == 'vacation':
+                        f.write(f"Days: {transaction['days_taken']} ({'Payout' if transaction['payout'] else 'Time Off'})\n")
+                        f.write(f"Remaining: {transaction['remaining_days']} days\n")
+                    else:  # payment
+                        f.write(f"Total: ${transaction['amount']:.2f}\n")
+                        f.write(f"  Base: ${transaction['base_pay']:.2f}\n")
+                        f.write(f"  Bonuses: ${transaction['bonuses']:.2f}\n")
+                        if transaction.get('overtime', 0) > 0:
+                            f.write(f"  Overtime: ${transaction['overtime']:.2f}\n")
+                        if transaction.get('special_hours', 0) > 0:
+                            f.write(f"  Special Hours: ${transaction['special_hours']:.2f}\n")
+                        if transaction.get('performance_bonus', 0) > 0:
+                            f.write(f"  Performance Bonus: ${transaction['performance_bonus']:.2f}\n")
+                    
+                    f.write(f"Description: {transaction['description']}\n")
+                    f.write("-" * 30 + "\n\n")
+            
+            print(f"Transaction report exported to: {filename}")
+        except Exception as e:
+            print(f"Error exporting transaction report: {e}")
+
+# ENHANCED VACATION MANAGER WITH ROLE-SPECIFIC POLICIES
+
+class EnhancedVacationManager:
+    """Enhanced vacation manager with role-specific policies and transaction logging."""
+    
+    def __init__(self, vacation_policy_manager: VacationPolicyManager, transaction_logger: TransactionLogger):
+        self.vacation_policy_manager = vacation_policy_manager
+        self.transaction_logger = transaction_logger
+    
     def take_vacation(self, employee: Employee, payout: bool, days: int) -> None:
+        """Take vacation with role-specific policies and logging."""
         if isinstance(employee, FreelancerEmployee):
             print("Freelancers do not have vacation benefits.")
             return
+        
+        policy = self.vacation_policy_manager.get_policy(employee.role)
+        
+        # Validate vacation request
         if payout:
-            employee.reduce_vacation_days(config.FIXED_VACATION_DAYS_PAYOUT)
+            if not self.vacation_policy_manager.can_payout_vacation(employee, days):
+                raise ValueError(f"Payout not allowed for {employee.role.value} or insufficient days")
         else:
-            employee.reduce_vacation_days(days)
+            if not self.vacation_policy_manager.can_take_vacation(employee, days):
+                raise ValueError(f"Cannot take {days} days. Available: {employee.vacation_days}, Max: {policy.max_vacation_days}")
+        
+        # Apply vacation
+        original_days = employee.vacation_days
+        employee.reduce_vacation_days(days)
+        
+        # Log transaction
+        description = f"{'Payout' if payout else 'Vacation'} for {employee.role.value}"
+        self.transaction_logger.log_vacation(
+            employee=employee,
+            days=days,
+            payout=payout,
+            remaining_days=employee.vacation_days,
+            description=description
+        )
+        
+        # Display result
+        action = "Paying out" if payout else "Taking"
+        print(f"{action} {days} vacation days for {employee.name} ({employee.role.value})")
+        print(f"Remaining vacation days: {employee.vacation_days}")
 
 # CALCULATOR REGISTRY
 
@@ -506,11 +741,15 @@ class GrantVacationCommand:
 
 # SERVICIO DE PAGO
 
-class PayrollService:
-    def __init__(self, repository: EmployeeRepository, ui: UIRenderer, policy_manager: PaymentPolicyManager):
+class EnhancedPayrollService:
+    """Enhanced payroll service with detailed transaction logging."""
+    
+    def __init__(self, repository: EmployeeRepository, ui: UIRenderer, 
+                 policy_manager: PaymentPolicyManager, transaction_logger: TransactionLogger):
         self._repository = repository
         self._ui = ui
         self._policy_manager = policy_manager
+        self._transaction_logger = transaction_logger
         self._calculator_registry = PayrollCalculatorRegistry(policy_manager)
         self._setup_calculators()
     
@@ -521,7 +760,7 @@ class PayrollService:
         self._calculator_registry.register(FreelancerEmployee, FreelancerPayrollCalculator(self._policy_manager))
 
     def pay_all_employees(self) -> None:
-        """Pagar todos los empleados con bonificaciones automáticas."""
+        """Pagar todos los empleados con bonificaciones automáticas y logging detallado."""
         employees = self._repository.get_all_employees()
         
         if not employees:
@@ -533,17 +772,115 @@ class PayrollService:
         
         for emp in employees:
             try:
-                amount = self._calculator_registry.calculate_pay(emp)
-                total_payroll += amount
+                # Calculate detailed pay breakdown
+                pay_breakdown = self._calculate_detailed_pay(emp)
+                total_amount = pay_breakdown['total']
+                total_payroll += total_amount
+                
+                # Log payment transaction
+                self._transaction_logger.log_payment(
+                    employee=emp,
+                    total_amount=total_amount,
+                    base_pay=pay_breakdown['base_pay'],
+                    bonuses=pay_breakdown['bonuses'],
+                    overtime=pay_breakdown.get('overtime', 0.0),
+                    special_hours=pay_breakdown.get('special_hours', 0.0),
+                    performance_bonus=pay_breakdown.get('performance_bonus', 0.0)
+                )
                 
                 # Mostrar detalle de bonificación
                 bonus_info = self._get_bonus_info(emp)
-                self._ui.display_message(f"Paying {emp.name}: ${amount:.2f} {bonus_info}")
+                self._ui.display_message(f"Paying {emp.name}: ${total_amount:.2f} {bonus_info}")
                 
             except Exception as e:
                 self._ui.display_message(f"Error paying {emp.name}: {e}")
         
         self._ui.display_message(f"\nTotal Payroll: ${total_payroll:.2f}")
+    
+    def _calculate_detailed_pay(self, emp: Employee) -> Dict[str, float]:
+        """Calculate detailed pay breakdown for logging."""
+        if isinstance(emp, SalariedEmployee):
+            policy = self._policy_manager.get_policy('salaried')
+            base_pay = emp.monthly_salary
+            
+            # Performance bonus (10% for non-interns)
+            performance_bonus = 0.0
+            if emp.role != EmployeeRole.INTERN:
+                performance_bonus = base_pay * (config.SALARIED_BONUS_PERCENTAGE / 100)
+            
+            # Extra performance bonus from policy
+            extra_performance_bonus = 0.0
+            if emp.performance_rating >= policy.performance_bonus_threshold:
+                extra_performance_bonus = base_pay * (policy.performance_bonus_percentage / 100)
+            
+            # Regular bonus from policy
+            regular_bonus = base_pay * (policy.bonus_percentage / 100)
+            
+            total_bonuses = performance_bonus + extra_performance_bonus + regular_bonus
+            total_pay = base_pay + total_bonuses
+            
+            return {
+                'total': total_pay,
+                'base_pay': base_pay,
+                'bonuses': total_bonuses,
+                'performance_bonus': performance_bonus + extra_performance_bonus
+            }
+            
+        elif isinstance(emp, HourlyEmployee):
+            policy = self._policy_manager.get_policy('hourly')
+            
+            # Regular hours
+            regular_hours = min(emp.hours_worked, policy.max_hours_per_week)
+            overtime_hours = max(0, emp.hours_worked - policy.max_hours_per_week)
+            
+            base_pay = regular_hours * emp.hourly_rate
+            overtime_pay = overtime_hours * emp.hourly_rate * policy.overtime_multiplier
+            
+            # Performance bonus ($100 if > 160 hours, except interns)
+            performance_bonus = 0.0
+            if emp.role != EmployeeRole.INTERN and emp.hours_worked > config.HOURLY_BONUS_THRESHOLD:
+                performance_bonus = config.HOURLY_BONUS_AMOUNT
+            
+            # Special hours
+            weekend_pay = emp.weekend_hours * emp.hourly_rate * policy.weekend_pay_multiplier
+            holiday_pay = emp.holiday_hours * emp.hourly_rate * policy.holiday_pay_multiplier
+            night_shift_pay = emp.night_shift_hours * policy.night_shift_bonus
+            special_hours_total = weekend_pay + holiday_pay + night_shift_pay
+            
+            total_pay = base_pay + overtime_pay + performance_bonus + special_hours_total
+            
+            return {
+                'total': total_pay,
+                'base_pay': base_pay,
+                'bonuses': performance_bonus,
+                'overtime': overtime_pay,
+                'special_hours': special_hours_total,
+                'performance_bonus': performance_bonus
+            }
+            
+        elif isinstance(emp, FreelancerEmployee):
+            policy = self._policy_manager.get_policy('freelancer')
+            base_pay = sum(emp.projects.values())
+            
+            # Performance bonus
+            performance_bonus = 0.0
+            if emp.performance_rating >= policy.performance_bonus_threshold:
+                performance_bonus = base_pay * (policy.performance_bonus_percentage / 100)
+            
+            # Regular bonus
+            regular_bonus = base_pay * (policy.bonus_percentage / 100)
+            total_bonuses = performance_bonus + regular_bonus
+            
+            total_pay = base_pay + total_bonuses
+            
+            return {
+                'total': total_pay,
+                'base_pay': base_pay,
+                'bonuses': total_bonuses,
+                'performance_bonus': performance_bonus
+            }
+        
+        return {'total': 0.0, 'base_pay': 0.0, 'bonuses': 0.0}
     
     def _get_bonus_info(self, emp: Employee) -> str:
         """Obtiene información sobre la bonificación aplicada."""
@@ -568,12 +905,13 @@ class PayrollService:
 # APP PRINCIPAL
 
 class EmployeeManagementApp:
-    def __init__(self, repo: EmployeeRepository, ui: UIRenderer, vacation_manager: VacationManager):
+    def __init__(self, repo: EmployeeRepository, ui: UIRenderer, vacation_manager: EnhancedVacationManager):
         self.repo = repo
         self.ui = ui
         self.vacation_manager = vacation_manager
         self.policy_manager = PaymentPolicyManager()
-        self.payroll_service = PayrollService(repo, ui, self.policy_manager)
+        self.transaction_logger = TransactionLogger()
+        self.payroll_service = EnhancedPayrollService(repo, ui, self.policy_manager, self.transaction_logger)
         self.validator = EmployeeInputValidator()
 
     def run(self):
@@ -585,6 +923,8 @@ class EmployeeManagementApp:
                 "View employees",
                 "Pay employees",  # Con bonificaciones automáticas
                 "Manage payment policies",
+                "View transaction history",
+                "Export transaction report",
                 "Exit"
             ])
             choice = self.ui.get_input("Choice: ")
@@ -599,6 +939,10 @@ class EmployeeManagementApp:
             elif choice == "5":
                 self._manage_payment_policies()
             elif choice == "6":
+                self._view_transaction_history()
+            elif choice == "7":
+                self._export_transaction_report()
+            elif choice == "8":
                 break
             else:
                 self.ui.display_message("Invalid choice.")
@@ -765,14 +1109,155 @@ class EmployeeManagementApp:
         except Exception as e:
             self.ui.display_message(f"Error updating policy: {e}")
 
+    def _view_transaction_history(self):
+        """View transaction history with filtering options."""
+        while True:
+            self.ui.clear_screen()
+            self.ui.display_menu([
+                "View all recent transactions",
+                "View employee-specific history",
+                "View vacation transactions only",
+                "View payment transactions only",
+                "Back to main menu"
+            ])
+            choice = self.ui.get_input("Choice: ")
+            
+            if choice == "1":
+                self._show_recent_transactions()
+            elif choice == "2":
+                self._show_employee_history()
+            elif choice == "3":
+                self._show_vacation_transactions()
+            elif choice == "4":
+                self._show_payment_transactions()
+            elif choice == "5":
+                break
+            else:
+                self.ui.display_message("Invalid choice.")
+            
+            if choice != "5":
+                self.ui.get_input("Press Enter to continue...")
+
+    def _show_recent_transactions(self):
+        """Show recent transactions."""
+        transactions = self.transaction_logger.get_recent_transactions(10)
+        if not transactions:
+            self.ui.display_message("No transactions found.")
+            return
+        
+        self.ui.display_message("Recent Transactions:")
+        self.ui.display_message("=" * 50)
+        
+        for i, transaction in enumerate(transactions, 1):
+            self.ui.display_message(f"\n{i}. {transaction['timestamp'][:19]} - {transaction['employee_name']}")
+            self.ui.display_message(f"   Type: {transaction['transaction_type'].upper()}")
+            if transaction['transaction_type'] == 'vacation':
+                self.ui.display_message(f"   Days: {transaction['days_taken']} ({'Payout' if transaction['payout'] else 'Time Off'})")
+            else:
+                self.ui.display_message(f"   Amount: ${transaction['amount']:.2f}")
+
+    def _show_employee_history(self):
+        """Show transaction history for a specific employee."""
+        employees = self.repo.get_all_employees()
+        if not employees:
+            self.ui.display_message("No employees found.")
+            return
+        
+        self.ui.display_message("Select employee to view history:")
+        for i, emp in enumerate(employees, 1):
+            self.ui.display_message(f"{i}. {emp.name}")
+        
+        try:
+            choice = int(self.ui.get_input("Enter employee number: ")) - 1
+            if 0 <= choice < len(employees):
+                employee = employees[choice]
+                transactions = self.transaction_logger.get_employee_history(employee.name)
+                
+                if not transactions:
+                    self.ui.display_message(f"No transactions found for {employee.name}")
+                    return
+                
+                self.ui.display_message(f"\nTransaction History for {employee.name}:")
+                self.ui.display_message("=" * 50)
+                
+                for transaction in transactions:
+                    self.ui.display_message(f"\n{transaction['timestamp'][:19]} - {transaction['transaction_type'].upper()}")
+                    if transaction['transaction_type'] == 'vacation':
+                        self.ui.display_message(f"  Days: {transaction['days_taken']} ({'Payout' if transaction['payout'] else 'Time Off'})")
+                        self.ui.display_message(f"  Remaining: {transaction['remaining_days']} days")
+                    else:
+                        self.ui.display_message(f"  Amount: ${transaction['amount']:.2f}")
+                        self.ui.display_message(f"  Base: ${transaction['base_pay']:.2f}, Bonuses: ${transaction['bonuses']:.2f}")
+            else:
+                self.ui.display_message("Invalid employee number.")
+        except ValueError:
+            self.ui.display_message("Invalid input.")
+
+    def _show_vacation_transactions(self):
+        """Show only vacation transactions."""
+        transactions = self.transaction_logger.get_transactions_by_type('vacation')
+        if not transactions:
+            self.ui.display_message("No vacation transactions found.")
+            return
+        
+        self.ui.display_message("Vacation Transactions:")
+        self.ui.display_message("=" * 50)
+        
+        for transaction in transactions:
+            self.ui.display_message(f"\n{transaction['timestamp'][:19]} - {transaction['employee_name']}")
+            self.ui.display_message(f"  Days: {transaction['days_taken']} ({'Payout' if transaction['payout'] else 'Time Off'})")
+            self.ui.display_message(f"  Remaining: {transaction['remaining_days']} days")
+
+    def _show_payment_transactions(self):
+        """Show only payment transactions."""
+        transactions = self.transaction_logger.get_transactions_by_type('payment')
+        if not transactions:
+            self.ui.display_message("No payment transactions found.")
+            return
+        
+        self.ui.display_message("Payment Transactions:")
+        self.ui.display_message("=" * 50)
+        
+        total_payments = 0.0
+        for transaction in transactions:
+            self.ui.display_message(f"\n{transaction['timestamp'][:19]} - {transaction['employee_name']}")
+            self.ui.display_message(f"  Total: ${transaction['amount']:.2f}")
+            self.ui.display_message(f"  Base: ${transaction['base_pay']:.2f}, Bonuses: ${transaction['bonuses']:.2f}")
+            if transaction.get('overtime', 0) > 0:
+                self.ui.display_message(f"  Overtime: ${transaction['overtime']:.2f}")
+            if transaction.get('performance_bonus', 0) > 0:
+                self.ui.display_message(f"  Performance Bonus: ${transaction['performance_bonus']:.2f}")
+            total_payments += transaction['amount']
+        
+        self.ui.display_message(f"\nTotal Payments: ${total_payments:.2f}")
+
+    def _export_transaction_report(self):
+        """Export transaction history to a file."""
+        try:
+            filename = self.ui.get_input("Enter filename (or press Enter for default): ").strip()
+            if not filename:
+                filename = None
+            
+            self.transaction_logger.export_transaction_report(filename)
+            self.ui.display_message("Transaction report exported successfully!")
+        except Exception as e:
+            self.ui.display_message(f"Error exporting report: {e}")
+
     def _grant_vacation(self):
         employees = self.repo.get_all_employees()
         if not employees:
             self.ui.display_message("No employees available.")
             return
 
+        # Show employees with vacation policy info
+        self.ui.display_message("Employees and their vacation policies:")
         for i, emp in enumerate(employees):
-            self.ui.display_message(f"{i}. {emp.name} ({emp.vacation_days} days left)")
+            if isinstance(emp, FreelancerEmployee):
+                self.ui.display_message(f"{i}. {emp.name} - Freelancer (No vacation benefits)")
+            else:
+                policy = self.vacation_manager.vacation_policy_manager.get_policy(emp.role)
+                self.ui.display_message(f"{i}. {emp.name} ({emp.role.value}) - {emp.vacation_days} days left")
+                self.ui.display_message(f"   Policy: {policy.base_vacation_days} base days, max {policy.max_vacation_days}, payout: {'Yes' if policy.payout_allowed else 'No'}")
 
         try:
             idx = int(self.ui.get_input("Select employee index: "))
@@ -780,10 +1265,26 @@ class EmployeeManagementApp:
                 raise ValueError("Invalid index")
 
             emp = employees[idx]
+            
+            if isinstance(emp, FreelancerEmployee):
+                self.ui.display_message("Freelancers do not have vacation benefits.")
+                return
+            
+            # Get vacation type and days
             payout = self.ui.get_input("Payout instead of time off? (y/n): ").lower() == "y"
-            days = config.FIXED_VACATION_DAYS_PAYOUT if payout else int(self.ui.get_input("How many vacation days?: "))
-            cmd = GrantVacationCommand(self.vacation_manager, self.ui, emp, payout, days)
-            cmd.execute()
+            
+            if payout:
+                policy = self.vacation_manager.vacation_policy_manager.get_policy(emp.role)
+                if not policy.payout_allowed:
+                    self.ui.display_message(f"Payout not allowed for {emp.role.value} employees.")
+                    return
+                days = int(self.ui.get_input(f"How many days to payout? (max {policy.payout_days_limit}): "))
+            else:
+                days = int(self.ui.get_input("How many vacation days?: "))
+            
+            # Use enhanced vacation manager directly
+            self.vacation_manager.take_vacation(emp, payout, days)
+            
         except Exception as e:
             self.ui.display_message(f"Error: {e}")
 
@@ -810,7 +1311,7 @@ class EmployeeManagementApp:
 def main():
     repo = InMemoryEmployeeRepository()
     ui = ConsoleUIRenderer()
-    vacation_manager = StandardVacationManager()
+    vacation_manager = EnhancedVacationManager(VacationPolicyManager(), TransactionLogger())
     app = EmployeeManagementApp(repo, ui, vacation_manager)
     app.run()
 
