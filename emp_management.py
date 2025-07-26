@@ -576,12 +576,12 @@ class EmployeeManagementApp:
                 selected_employee = employees[idx]
                 payout = self._ui.get_input("Payout instead of time off? (y/n): ").lower() == "y"
                 
-                
+                # Get number of days from user
                 if selected_employee.role == EmployeeRole.INTERN:
-                    
+                    # Don't ask for days since it will fail anyway
                     days = 1
                 else:
-                    
+                    # Show role-specific limits
                     if selected_employee.role == EmployeeRole.MANAGER:
                         max_days = 10 if payout else selected_employee.vacation_days
                         limit_msg = f"(max {max_days} days for managers"
@@ -589,7 +589,7 @@ class EmployeeManagementApp:
                             limit_msg += " for payout"
                         limit_msg += ")"
                     elif selected_employee.role == EmployeeRole.VICE_PRESIDENT:
-                        limit_msg = "(max 5 days per request for Vice Presidents)"
+                        limit_msg = "(max 5 days per request for VPs)"
                     else:
                         limit_msg = ""
                     
