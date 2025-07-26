@@ -1,0 +1,40 @@
+{
+  "policies": [
+    {
+      "employee_type": "salaried",
+      "base_rate": 5000.0,
+      "overtime_multiplier": 1.0,
+      "bonus_percentage": 10.0,
+      "max_hours_per_week": 40,
+      "holiday_pay_multiplier": 1.0,
+      "weekend_pay_multiplier": 1.0,
+      "night_shift_bonus": 0.0,
+      "performance_bonus_threshold": 0.8,
+      "performance_bonus_percentage": 5.0
+    },
+    {
+      "employee_type": "hourly",
+      "base_rate": 50.0,
+      "overtime_multiplier": 1.5,
+      "bonus_percentage": 5.0,
+      "max_hours_per_week": 40,
+      "holiday_pay_multiplier": 1.5,
+      "weekend_pay_multiplier": 1.25,
+      "night_shift_bonus": 2.0,
+      "performance_bonus_threshold": 0.9,
+      "performance_bonus_percentage": 3.0
+    },
+    {
+      "employee_type": "freelancer",
+      "base_rate": 0.0,
+      "overtime_multiplier": 1.0,
+      "bonus_percentage": 15.0,
+      "max_hours_per_week": 0,
+      "holiday_pay_multiplier": 1.0,
+      "weekend_pay_multiplier": 1.0,
+      "night_shift_bonus": 0.0,
+      "performance_bonus_threshold": 0.9,
+      "performance_bonus_percentage": 10.0
+    }
+  ]
+}
