@@ -17,7 +17,7 @@ class AppConfig:
     DEFAULT_HOURS_WORKED: int = 10
     DEFAULT_VACATION_DAYS: int = 25
     PAYMENT_POLICIES_FILE: str = "payment_policies.json"
-    # Bonificaciones
+    # Bonificación constants
     SALARIED_BONUS_PERCENTAGE: float = 10.0  # 10% para asalariados
     HOURLY_BONUS_AMOUNT: float = 100.0       # $100 para empleados por hora
     HOURLY_BONUS_THRESHOLD: int = 160        # umbral de 160 horas
@@ -812,7 +812,6 @@ def main():
     ui = ConsoleUIRenderer()
     vacation_manager = StandardVacationManager()
     app = EmployeeManagementApp(repo, ui, vacation_manager)
-    
     app.run()
 
 if __name__ == "__main__":
