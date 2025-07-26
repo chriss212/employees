@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Dict, Protocol, Type, TypeVar
+from typing import List, Dict, Protocol, Type, TypeVar, Optional
 from enum import Enum
 import os
+import json
+from pathlib import Path
 
 # CONFIGURATION
 
@@ -14,9 +16,153 @@ class AppConfig:
     DEFAULT_HOURLY_RATE: float = 50.0
     DEFAULT_HOURS_WORKED: int = 10
     DEFAULT_VACATION_DAYS: int = 25
+    PAYMENT_POLICIES_FILE: str = "payment_policies.json"
 
 # Global configuration instance
 config = AppConfig()
+
+# PAYMENT POLICIES
+
+@dataclass
+class PaymentPolicy:
+    """Dynamic payment policy configuration."""
+    employee_type: str
+    base_rate: float
+    overtime_multiplier: float = 1.5
+    bonus_percentage: float = 0.0
+    max_hours_per_week: int = 40
+    holiday_pay_multiplier: float = 1.0
+    weekend_pay_multiplier: float = 1.0
+    night_shift_bonus: float = 0.0
+    performance_bonus_threshold: float = 0.0
+    performance_bonus_percentage: float = 0.0
+
+class PaymentPolicyManager:
+    """Manages dynamic payment policies loaded from external sources."""
+    
+    def __init__(self, policies_file: str = config.PAYMENT_POLICIES_FILE):
+        self.policies_file = policies_file
+        self._policies: Dict[str, PaymentPolicy] = {}
+        self._load_policies()
+    
+    def _load_policies(self) -> None:
+        """Load payment policies from JSON file."""
+        try:
+            if Path(self.policies_file).exists():
+                with open(self.policies_file, 'r', encoding='utf-8') as f:
+                    policies_data = json.load(f)
+                    for policy_data in policies_data.get('policies', []):
+                        policy = PaymentPolicy(**policy_data)
+                        self._policies[policy.employee_type] = policy
+                print(f"Loaded {len(self._policies)} payment policies from {self.policies_file}")
+            else:
+                self._create_default_policies()
+        except Exception as e:
+            print(f"Error loading payment policies: {e}")
+            self._create_default_policies()
+    
+    def _create_default_policies(self) -> None:
+        """Create default payment policies if file doesn't exist."""
+        default_policies = {
+            'salaried': PaymentPolicy(
+                employee_type='salaried',
+                base_rate=config.DEFAULT_MONTHLY_SALARY,
+                bonus_percentage=10.0,
+                performance_bonus_threshold=0.8,
+                performance_bonus_percentage=5.0
+            ),
+            'hourly': PaymentPolicy(
+                employee_type='hourly',
+                base_rate=config.DEFAULT_HOURLY_RATE,
+                overtime_multiplier=1.5,
+                max_hours_per_week=40,
+                weekend_pay_multiplier=1.25,
+                night_shift_bonus=2.0
+            ),
+            'freelancer': PaymentPolicy(
+                employee_type='freelancer',
+                base_rate=0.0,  # Freelancers are paid per project
+                bonus_percentage=15.0,
+                performance_bonus_threshold=0.9,
+                performance_bonus_percentage=10.0
+            )
+        }
+        self._policies.update(default_policies)
+        self._save_default_policies()
+    
+    def _save_default_policies(self) -> None:
+        """Save default policies to JSON file."""
+        try:
+            policies_data = {
+                'policies': [
+                    {
+                        'employee_type': policy.employee_type,
+                        'base_rate': policy.base_rate,
+                        'overtime_multiplier': policy.overtime_multiplier,
+                        'bonus_percentage': policy.bonus_percentage,
+                        'max_hours_per_week': policy.max_hours_per_week,
+                        'holiday_pay_multiplier': policy.holiday_pay_multiplier,
+                        'weekend_pay_multiplier': policy.weekend_pay_multiplier,
+                        'night_shift_bonus': policy.night_shift_bonus,
+                        'performance_bonus_threshold': policy.performance_bonus_threshold,
+                        'performance_bonus_percentage': policy.performance_bonus_percentage
+                    }
+                    for policy in self._policies.values()
+                ]
+            }
+            with open(self.policies_file, 'w', encoding='utf-8') as f:
+                json.dump(policies_data, f, indent=2, ensure_ascii=False)
+            print(f"Created default payment policies file: {self.policies_file}")
+        except Exception as e:
+            print(f"Error saving default policies: {e}")
+    
+    def get_policy(self, employee_type: str) -> PaymentPolicy:
+        """Get payment policy for employee type."""
+        policy = self._policies.get(employee_type)
+        if not policy:
+            raise ValueError(f"No payment policy found for employee type: {employee_type}")
+        return policy
+    
+    def reload_policies(self) -> None:
+        """Reload policies from file."""
+        self._load_policies()
+    
+    def update_policy(self, employee_type: str, **kwargs) -> None:
+        """Update a payment policy."""
+        if employee_type not in self._policies:
+            raise ValueError(f"No policy exists for employee type: {employee_type}")
+        
+        current_policy = self._policies[employee_type]
+        for key, value in kwargs.items():
+            if hasattr(current_policy, key):
+                setattr(current_policy, key, value)
+        
+        self._save_policies()
+    
+    def _save_policies(self) -> None:
+        """Save current policies to JSON file."""
+        try:
+            policies_data = {
+                'policies': [
+                    {
+                        'employee_type': policy.employee_type,
+                        'base_rate': policy.base_rate,
+                        'overtime_multiplier': policy.overtime_multiplier,
+                        'bonus_percentage': policy.bonus_percentage,
+                        'max_hours_per_week': policy.max_hours_per_week,
+                        'holiday_pay_multiplier': policy.holiday_pay_multiplier,
+                        'weekend_pay_multiplier': policy.weekend_pay_multiplier,
+                        'night_shift_bonus': policy.night_shift_bonus,
+                        'performance_bonus_threshold': policy.performance_bonus_threshold,
+                        'performance_bonus_percentage': policy.performance_bonus_percentage
+                    }
+                    for policy in self._policies.values()
+                ]
+            }
+            with open(self.policies_file, 'w', encoding='utf-8') as f:
+                json.dump(policies_data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"Error saving policies: {e}")
 
 # ENUMS AND CONSTANTS
 
@@ -56,6 +202,10 @@ class Employee:
     name: str
     role: EmployeeRole
     vacation_days: int = config.DEFAULT_VACATION_DAYS
+    performance_rating: float = 1.0  # 0.0 to 1.0
+    night_shift_hours: int = 0
+    weekend_hours: int = 0
+    holiday_hours: int = 0
 
     def reduce_vacation_days(self, days: int) -> None:
         if self.vacation_days < days:
@@ -81,16 +231,75 @@ class FreelancerEmployee(Employee):
 # STRATEGY IMPLEMENTATIONS
 
 class SalariedPayrollCalculator:
+    def __init__(self, policy_manager: PaymentPolicyManager):
+        self.policy_manager = policy_manager
+    
     def calculate_pay(self, employee: SalariedEmployee) -> float:
-        return employee.monthly_salary
+        policy = self.policy_manager.get_policy('salaried')
+        
+        # Base salary
+        base_pay = employee.monthly_salary
+        
+        # Performance bonus
+        performance_bonus = 0.0
+        if employee.performance_rating >= policy.performance_bonus_threshold:
+            performance_bonus = base_pay * (policy.performance_bonus_percentage / 100)
+        
+        # Regular bonus
+        regular_bonus = base_pay * (policy.bonus_percentage / 100)
+        
+        total_pay = base_pay + performance_bonus + regular_bonus
+        return total_pay
 
 class HourlyPayrollCalculator:
+    def __init__(self, policy_manager: PaymentPolicyManager):
+        self.policy_manager = policy_manager
+    
     def calculate_pay(self, employee: HourlyEmployee) -> float:
-        return employee.hourly_rate * employee.hours_worked
+        policy = self.policy_manager.get_policy('hourly')
+        
+        # Regular hours (up to max_hours_per_week)
+        regular_hours = min(employee.hours_worked, policy.max_hours_per_week)
+        overtime_hours = max(0, employee.hours_worked - policy.max_hours_per_week)
+        
+        # Base pay for regular hours
+        base_pay = regular_hours * employee.hourly_rate
+        
+        # Overtime pay
+        overtime_pay = overtime_hours * employee.hourly_rate * policy.overtime_multiplier
+        
+        # Weekend pay
+        weekend_pay = employee.weekend_hours * employee.hourly_rate * policy.weekend_pay_multiplier
+        
+        # Holiday pay
+        holiday_pay = employee.holiday_hours * employee.hourly_rate * policy.holiday_pay_multiplier
+        
+        # Night shift bonus
+        night_shift_pay = employee.night_shift_hours * policy.night_shift_bonus
+        
+        total_pay = base_pay + overtime_pay + weekend_pay + holiday_pay + night_shift_pay
+        return total_pay
 
 class FreelancerPayrollCalculator:
+    def __init__(self, policy_manager: PaymentPolicyManager):
+        self.policy_manager = policy_manager
+    
     def calculate_pay(self, employee: FreelancerEmployee) -> float:
-        return sum(employee.projects.values())
+        policy = self.policy_manager.get_policy('freelancer')
+        
+        # Base pay from projects
+        base_pay = sum(employee.projects.values())
+        
+        # Performance bonus
+        performance_bonus = 0.0
+        if employee.performance_rating >= policy.performance_bonus_threshold:
+            performance_bonus = base_pay * (policy.performance_bonus_percentage / 100)
+        
+        # Regular bonus
+        regular_bonus = base_pay * (policy.bonus_percentage / 100)
+        
+        total_pay = base_pay + performance_bonus + regular_bonus
+        return total_pay
 
 class StandardVacationManager:
     def take_vacation(self, employee: Employee, payout: bool, days: int) -> None:
@@ -107,7 +316,8 @@ class StandardVacationManager:
 class PayrollCalculatorRegistry:
     """Registry pattern to map employee types to their calculators."""
     
-    def __init__(self):
+    def __init__(self, policy_manager: PaymentPolicyManager):
+        self.policy_manager = policy_manager
         self._calculators: Dict[Type[Employee], PayrollCalculator] = {}
     
     def register(self, employee_type: Type[Employee], calculator: PayrollCalculator) -> None:
@@ -159,17 +369,34 @@ class AbstractEmployeeFactory(ABC):
 
 class SalariedEmployeeFactory(AbstractEmployeeFactory):
     def create_employee(self, name: str, role: EmployeeRole, **kwargs) -> Employee:
-        return SalariedEmployee(name=name, role=role, monthly_salary=kwargs.get("monthly_salary", config.DEFAULT_MONTHLY_SALARY))
+        return SalariedEmployee(
+            name=name, 
+            role=role, 
+            monthly_salary=kwargs.get("monthly_salary", config.DEFAULT_MONTHLY_SALARY),
+            performance_rating=kwargs.get("performance_rating", 1.0)
+        )
 
 class HourlyEmployeeFactory(AbstractEmployeeFactory):
     def create_employee(self, name: str, role: EmployeeRole, **kwargs) -> Employee:
-        return HourlyEmployee(name=name, role=role,
-                              hourly_rate=kwargs.get("hourly_rate", config.DEFAULT_HOURLY_RATE),
-                              hours_worked=kwargs.get("hours_worked", config.DEFAULT_HOURS_WORKED))
+        return HourlyEmployee(
+            name=name, 
+            role=role,
+            hourly_rate=kwargs.get("hourly_rate", config.DEFAULT_HOURLY_RATE),
+            hours_worked=kwargs.get("hours_worked", config.DEFAULT_HOURS_WORKED),
+            performance_rating=kwargs.get("performance_rating", 1.0),
+            night_shift_hours=kwargs.get("night_shift_hours", 0),
+            weekend_hours=kwargs.get("weekend_hours", 0),
+            holiday_hours=kwargs.get("holiday_hours", 0)
+        )
 
 class FreelancerEmployeeFactory(AbstractEmployeeFactory):
     def create_employee(self, name: str, role: EmployeeRole, **kwargs) -> Employee:
-        return FreelancerEmployee(name=name, role=role, projects=kwargs.get("projects", {}))
+        return FreelancerEmployee(
+            name=name, 
+            role=role, 
+            projects=kwargs.get("projects", {}),
+            performance_rating=kwargs.get("performance_rating", 1.0)
+        )
 
 class EmployeeFactoryProvider:
     @staticmethod
@@ -235,6 +462,16 @@ class EmployeeInputValidator:
             return hours
         except ValueError:
             raise ValueError("Invalid hours worked")
+    
+    @staticmethod
+    def validate_performance_rating(rating_str: str) -> float:
+        try:
+            rating = float(rating_str)
+            if rating < 0.0 or rating > 1.0:
+                raise ValueError("Performance rating must be between 0.0 and 1.0")
+            return rating
+        except ValueError:
+            raise ValueError("Invalid performance rating")
 
 # COMANDO PARA VACACIONES
 
@@ -256,25 +493,31 @@ class GrantVacationCommand:
 # SERVICIO DE PAGO
 
 class PayrollService:
-    def __init__(self, repository: EmployeeRepository, ui: UIRenderer):
+    def __init__(self, repository: EmployeeRepository, ui: UIRenderer, policy_manager: PaymentPolicyManager):
         self._repository = repository
         self._ui = ui
-        self._calculator_registry = PayrollCalculatorRegistry()
+        self._policy_manager = policy_manager
+        self._calculator_registry = PayrollCalculatorRegistry(policy_manager)
         self._setup_calculators()
     
     def _setup_calculators(self) -> None:
         """Setup the calculator registry with all employee types."""
-        self._calculator_registry.register(SalariedEmployee, SalariedPayrollCalculator())
-        self._calculator_registry.register(HourlyEmployee, HourlyPayrollCalculator())
-        self._calculator_registry.register(FreelancerEmployee, FreelancerPayrollCalculator())
+        self._calculator_registry.register(SalariedEmployee, SalariedPayrollCalculator(self._policy_manager))
+        self._calculator_registry.register(HourlyEmployee, HourlyPayrollCalculator(self._policy_manager))
+        self._calculator_registry.register(FreelancerEmployee, FreelancerPayrollCalculator(self._policy_manager))
 
     def pay_all_employees(self) -> None:
         for emp in self._repository.get_all_employees():
             try:
                 amount = self._calculator_registry.calculate_pay(emp)
-                self._ui.display_message(f"Paying {emp.name}: ${amount}")
+                self._ui.display_message(f"Paying {emp.name}: ${amount:.2f}")
             except Exception as e:
                 self._ui.display_message(f"Error paying {emp.name}: {e}")
+    
+    def reload_policies(self) -> None:
+        """Reload payment policies from file."""
+        self._policy_manager.reload_policies()
+        self._ui.display_message("Payment policies reloaded successfully!")
 
 # APP PRINCIPAL
 
@@ -283,7 +526,8 @@ class EmployeeManagementApp:
         self.repo = repo
         self.ui = ui
         self.vacation_manager = vacation_manager
-        self.payroll_service = PayrollService(repo, ui)
+        self.policy_manager = PaymentPolicyManager()
+        self.payroll_service = PayrollService(repo, ui, self.policy_manager)
         self.validator = EmployeeInputValidator()
 
     def run(self):
@@ -294,6 +538,7 @@ class EmployeeManagementApp:
                 "Grant vacation",
                 "View employees",
                 "Pay employees",
+                "Manage payment policies",
                 "Exit"
             ])
             choice = self.ui.get_input("Choice: ")
@@ -306,6 +551,8 @@ class EmployeeManagementApp:
             elif choice == "4":
                 self.payroll_service.pay_all_employees()
             elif choice == "5":
+                self._manage_payment_policies()
+            elif choice == "6":
                 break
             else:
                 self.ui.display_message("Invalid choice.")
@@ -353,8 +600,26 @@ class EmployeeManagementApp:
             kwargs["hourly_rate"] = self.validator.validate_hourly_rate(rate_input)
             hours_input = self.ui.get_input("Hours worked: ")
             kwargs["hours_worked"] = self.validator.validate_hours_worked(hours_input)
+            
+            # Additional hourly employee data
+            night_hours = self.ui.get_input("Night shift hours (0 if none): ")
+            kwargs["night_shift_hours"] = int(night_hours) if night_hours.isdigit() else 0
+            
+            weekend_hours = self.ui.get_input("Weekend hours (0 if none): ")
+            kwargs["weekend_hours"] = int(weekend_hours) if weekend_hours.isdigit() else 0
+            
+            holiday_hours = self.ui.get_input("Holiday hours (0 if none): ")
+            kwargs["holiday_hours"] = int(holiday_hours) if holiday_hours.isdigit() else 0
+            
         elif emp_type == EmployeeType.FREELANCER:
             kwargs["projects"] = self._get_freelancer_projects()
+
+        # Performance rating for all employee types
+        rating_input = self.ui.get_input("Performance rating (0.0-1.0, default 1.0): ")
+        if rating_input.strip():
+            kwargs["performance_rating"] = self.validator.validate_performance_rating(rating_input)
+        else:
+            kwargs["performance_rating"] = 1.0
 
         return kwargs
 
@@ -378,6 +643,81 @@ class EmployeeManagementApp:
                 continue
         
         return projects
+
+    def _manage_payment_policies(self):
+        """Manage payment policies."""
+        while True:
+            self.ui.clear_screen()
+            self.ui.display_menu([
+                "View current policies",
+                "Reload policies from file",
+                "Update policy",
+                "Back to main menu"
+            ])
+            choice = self.ui.get_input("Choice: ")
+            
+            if choice == "1":
+                self._view_payment_policies()
+            elif choice == "2":
+                self.payroll_service.reload_policies()
+            elif choice == "3":
+                self._update_payment_policy()
+            elif choice == "4":
+                break
+            else:
+                self.ui.display_message("Invalid choice.")
+            
+            if choice != "4":
+                self.ui.get_input("Press Enter to continue...")
+
+    def _view_payment_policies(self):
+        """Display current payment policies."""
+        self.ui.display_message("Current Payment Policies:")
+        self.ui.display_message("=" * 50)
+        
+        for emp_type in ['salaried', 'hourly', 'freelancer']:
+            try:
+                policy = self.policy_manager.get_policy(emp_type)
+                self.ui.display_message(f"\n{emp_type.upper()} EMPLOYEE POLICY:")
+                self.ui.display_message(f"  Base Rate: ${policy.base_rate}")
+                self.ui.display_message(f"  Overtime Multiplier: {policy.overtime_multiplier}x")
+                self.ui.display_message(f"  Bonus Percentage: {policy.bonus_percentage}%")
+                self.ui.display_message(f"  Max Hours per Week: {policy.max_hours_per_week}")
+                self.ui.display_message(f"  Performance Bonus Threshold: {policy.performance_bonus_threshold}")
+                self.ui.display_message(f"  Performance Bonus Percentage: {policy.performance_bonus_percentage}%")
+            except Exception as e:
+                self.ui.display_message(f"Error loading {emp_type} policy: {e}")
+
+    def _update_payment_policy(self):
+        """Update a payment policy."""
+        self.ui.display_message("Available employee types: salaried, hourly, freelancer")
+        emp_type = self.ui.get_input("Enter employee type to update: ").lower()
+        
+        if emp_type not in ['salaried', 'hourly', 'freelancer']:
+            self.ui.display_message("Invalid employee type.")
+            return
+        
+        try:
+            current_policy = self.policy_manager.get_policy(emp_type)
+            self.ui.display_message(f"Current {emp_type} policy loaded.")
+            
+            # Get new values
+            new_base_rate = self.ui.get_input(f"New base rate (current: {current_policy.base_rate}): ")
+            if new_base_rate.strip():
+                self.policy_manager.update_policy(emp_type, base_rate=float(new_base_rate))
+            
+            new_overtime = self.ui.get_input(f"New overtime multiplier (current: {current_policy.overtime_multiplier}): ")
+            if new_overtime.strip():
+                self.policy_manager.update_policy(emp_type, overtime_multiplier=float(new_overtime))
+            
+            new_bonus = self.ui.get_input(f"New bonus percentage (current: {current_policy.bonus_percentage}): ")
+            if new_bonus.strip():
+                self.policy_manager.update_policy(emp_type, bonus_percentage=float(new_bonus))
+            
+            self.ui.display_message(f"{emp_type} policy updated successfully!")
+            
+        except Exception as e:
+            self.ui.display_message(f"Error updating policy: {e}")
 
     def _grant_vacation(self):
         employees = self.repo.get_all_employees()
@@ -403,10 +743,14 @@ class EmployeeManagementApp:
 
     def _view_employees(self):
         for emp in self.repo.get_all_employees():
-            self.ui.display_message(f"{emp.name} - {emp.role.value} - {emp.vacation_days} days")
+            self.ui.display_message(f"{emp.name} - {emp.role.value} - {emp.vacation_days} days - Performance: {emp.performance_rating}")
             if isinstance(emp, FreelancerEmployee):
                 for pname, amt in emp.projects.items():
                     self.ui.display_message(f"  Project: {pname}, Amount: ${amt}")
+            elif isinstance(emp, HourlyEmployee):
+                self.ui.display_message(f"  Hours: {emp.hours_worked}, Rate: ${emp.hourly_rate}")
+                if emp.night_shift_hours > 0 or emp.weekend_hours > 0 or emp.holiday_hours > 0:
+                    self.ui.display_message(f"  Special hours - Night: {emp.night_shift_hours}, Weekend: {emp.weekend_hours}, Holiday: {emp.holiday_hours}")
 
 # MAIN
 
