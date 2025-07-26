@@ -17,6 +17,10 @@ class AppConfig:
     DEFAULT_HOURS_WORKED: int = 10
     DEFAULT_VACATION_DAYS: int = 25
     PAYMENT_POLICIES_FILE: str = "payment_policies.json"
+    # Bonificaciones
+    SALARIED_BONUS_PERCENTAGE: float = 10.0  # 10% para asalariados
+    HOURLY_BONUS_AMOUNT: float = 100.0       # $100 para empleados por hora
+    HOURLY_BONUS_THRESHOLD: int = 160        # umbral de 160 horas
 
 # Global configuration instance
 config = AppConfig()
@@ -67,7 +71,7 @@ class PaymentPolicyManager:
             'salaried': PaymentPolicy(
                 employee_type='salaried',
                 base_rate=config.DEFAULT_MONTHLY_SALARY,
-                bonus_percentage=10.0,
+                bonus_percentage=config.SALARIED_BONUS_PERCENTAGE,  # 10% bonificación
                 performance_bonus_threshold=0.8,
                 performance_bonus_percentage=5.0
             ),
@@ -240,15 +244,20 @@ class SalariedPayrollCalculator:
         # Base salary
         base_pay = employee.monthly_salary
         
-        # Performance bonus
+        # BONIFICACIÓN POR DESEMPEÑO: 10% adicional (excepto pasantes)
         performance_bonus = 0.0
-        if employee.performance_rating >= policy.performance_bonus_threshold:
-            performance_bonus = base_pay * (policy.performance_bonus_percentage / 100)
+        if employee.role != EmployeeRole.INTERN:  # Los pasantes no reciben bonificación
+            performance_bonus = base_pay * (config.SALARIED_BONUS_PERCENTAGE / 100)
         
-        # Regular bonus
+        # Performance bonus adicional
+        extra_performance_bonus = 0.0
+        if employee.performance_rating >= policy.performance_bonus_threshold:
+            extra_performance_bonus = base_pay * (policy.performance_bonus_percentage / 100)
+        
+        # Regular bonus from policy
         regular_bonus = base_pay * (policy.bonus_percentage / 100)
         
-        total_pay = base_pay + performance_bonus + regular_bonus
+        total_pay = base_pay + performance_bonus + extra_performance_bonus + regular_bonus
         return total_pay
 
 class HourlyPayrollCalculator:
@@ -268,6 +277,11 @@ class HourlyPayrollCalculator:
         # Overtime pay
         overtime_pay = overtime_hours * employee.hourly_rate * policy.overtime_multiplier
         
+        # BONIFICACIÓN POR DESEMPEÑO: $100 si > 160 horas (excepto pasantes)
+        performance_bonus = 0.0
+        if employee.role != EmployeeRole.INTERN and employee.hours_worked > config.HOURLY_BONUS_THRESHOLD:
+            performance_bonus = config.HOURLY_BONUS_AMOUNT
+        
         # Weekend pay
         weekend_pay = employee.weekend_hours * employee.hourly_rate * policy.weekend_pay_multiplier
         
@@ -277,7 +291,7 @@ class HourlyPayrollCalculator:
         # Night shift bonus
         night_shift_pay = employee.night_shift_hours * policy.night_shift_bonus
         
-        total_pay = base_pay + overtime_pay + weekend_pay + holiday_pay + night_shift_pay
+        total_pay = base_pay + overtime_pay + performance_bonus + weekend_pay + holiday_pay + night_shift_pay
         return total_pay
 
 class FreelancerPayrollCalculator:
@@ -507,12 +521,44 @@ class PayrollService:
         self._calculator_registry.register(FreelancerEmployee, FreelancerPayrollCalculator(self._policy_manager))
 
     def pay_all_employees(self) -> None:
-        for emp in self._repository.get_all_employees():
+        """Pagar todos los empleados con bonificaciones automáticas."""
+        employees = self._repository.get_all_employees()
+        
+        if not employees:
+            self._ui.display_message("No employees to pay.")
+            return
+        
+        self._ui.display_message("\n--- PAYROLL REPORT WITH PERFORMANCE BONUSES ---")
+        total_payroll = 0.0
+        
+        for emp in employees:
             try:
                 amount = self._calculator_registry.calculate_pay(emp)
-                self._ui.display_message(f"Paying {emp.name}: ${amount:.2f}")
+                total_payroll += amount
+                
+                # Mostrar detalle de bonificación
+                bonus_info = self._get_bonus_info(emp)
+                self._ui.display_message(f"Paying {emp.name}: ${amount:.2f} {bonus_info}")
+                
             except Exception as e:
                 self._ui.display_message(f"Error paying {emp.name}: {e}")
+        
+        self._ui.display_message(f"\nTotal Payroll: ${total_payroll:.2f}")
+    
+    def _get_bonus_info(self, emp: Employee) -> str:
+        """Obtiene información sobre la bonificación aplicada."""
+        if emp.role == EmployeeRole.INTERN:
+            return "(No bonus - Intern)"
+        
+        if isinstance(emp, SalariedEmployee):
+            return f"(+{config.SALARIED_BONUS_PERCENTAGE}% performance bonus)"
+        elif isinstance(emp, HourlyEmployee):
+            if emp.hours_worked > config.HOURLY_BONUS_THRESHOLD:
+                return f"(+${config.HOURLY_BONUS_AMOUNT} performance bonus - {emp.hours_worked}hrs > {config.HOURLY_BONUS_THRESHOLD})"
+            else:
+                return f"(No performance bonus - {emp.hours_worked}hrs ≤ {config.HOURLY_BONUS_THRESHOLD})"
+        
+        return ""
     
     def reload_policies(self) -> None:
         """Reload payment policies from file."""
@@ -537,7 +583,7 @@ class EmployeeManagementApp:
                 "Create employee",
                 "Grant vacation",
                 "View employees",
-                "Pay employees",
+                "Pay employees",  # Con bonificaciones automáticas
                 "Manage payment policies",
                 "Exit"
             ])
@@ -549,7 +595,7 @@ class EmployeeManagementApp:
             elif choice == "3":
                 self._view_employees()
             elif choice == "4":
-                self.payroll_service.pay_all_employees()
+                self.payroll_service.pay_all_employees()  # Incluye bonificaciones automáticas
             elif choice == "5":
                 self._manage_payment_policies()
             elif choice == "6":
@@ -742,7 +788,12 @@ class EmployeeManagementApp:
             self.ui.display_message(f"Error: {e}")
 
     def _view_employees(self):
-        for emp in self.repo.get_all_employees():
+        employees = self.repo.get_all_employees()
+        if not employees:
+            self.ui.display_message("No employees found.")
+            return
+            
+        for emp in employees:
             self.ui.display_message(f"{emp.name} - {emp.role.value} - {emp.vacation_days} days - Performance: {emp.performance_rating}")
             if isinstance(emp, FreelancerEmployee):
                 for pname, amt in emp.projects.items():
@@ -751,6 +802,8 @@ class EmployeeManagementApp:
                 self.ui.display_message(f"  Hours: {emp.hours_worked}, Rate: ${emp.hourly_rate}")
                 if emp.night_shift_hours > 0 or emp.weekend_hours > 0 or emp.holiday_hours > 0:
                     self.ui.display_message(f"  Special hours - Night: {emp.night_shift_hours}, Weekend: {emp.weekend_hours}, Holiday: {emp.holiday_hours}")
+            elif isinstance(emp, SalariedEmployee):
+                self.ui.display_message(f"  Monthly Salary: ${emp.monthly_salary}")
 
 # MAIN
 
@@ -759,6 +812,7 @@ def main():
     ui = ConsoleUIRenderer()
     vacation_manager = StandardVacationManager()
     app = EmployeeManagementApp(repo, ui, vacation_manager)
+    
     app.run()
 
 if __name__ == "__main__":
